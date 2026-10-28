@@ -166,7 +166,7 @@ struct StackedColumn {
     let color: NSColor
 }
 
-/// Draws each value with its small label underneath, side by side, sized for the menu bar.
+/// Draws each value with its small label above, side by side, sized for the menu bar.
 func stackedImage(_ columns: [StackedColumn], warning: Bool) -> NSImage {
     let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
     let labelFont = NSFont.systemFont(ofSize: 7, weight: .semibold)
@@ -187,8 +187,8 @@ func stackedImage(_ columns: [StackedColumn], warning: Bool) -> NSImage {
     let image = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
         var x: CGFloat = 0
         for (v, l, w) in cells {
-            l.draw(at: NSPoint(x: x + (w - l.size().width) / 2, y: 1))
-            v.draw(at: NSPoint(x: x + (w - v.size().width) / 2, y: 8))
+            l.draw(at: NSPoint(x: x + (w - l.size().width) / 2, y: 13))
+            v.draw(at: NSPoint(x: x + (w - v.size().width) / 2, y: 0))
             x += w + gap
         }
         if warning {
