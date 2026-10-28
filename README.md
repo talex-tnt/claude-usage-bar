@@ -13,7 +13,7 @@ A tiny native macOS menu bar app that always shows your Claude plan usage:
 - **7d** colors: the week is split into 7 daily portions of ~14.3%. On day *n* of the window the budget is *n* × 14.3%. Orange once usage reaches 85% of that budget, red at 90% of the whole week, green otherwise.
 - **Hover** shows when each window resets. **Click** opens a menu with reset times, how much of each window has elapsed (to compare against your usage), the last update time, *Refresh* and *Quit*.
 
-It reads the OAuth token that Claude Code stores in the macOS login keychain (`Claude Code-credentials`) and calls the same usage endpoint Claude Code uses for `/usage`. It refreshes every 60 s and again on wake from sleep. It never refreshes or writes the token itself: if the token has expired, the numbers turn grey with a ⚠︎ until Claude Code renews it.
+It reads the OAuth token that Claude Code stores in the macOS login keychain (`Claude Code-credentials`) and calls the same usage endpoint Claude Code uses for `/usage`. It refreshes every 3 min and on wake from sleep. When the endpoint is rate-limited (429) or fails, it backs off (up to 15 min) and keeps the last colors; numbers turn grey only when the data is older than 15 min. It never refreshes or writes the token itself: if the token has expired, the numbers turn grey with a ⚠︎ until Claude Code renews it.
 
 ## Requirements
 

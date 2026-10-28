@@ -2,7 +2,9 @@ import AppKit
 
 // MARK: - Config
 
-let pollInterval: TimeInterval = 60
+let pollInterval: TimeInterval = 180
+let maxBackoff: TimeInterval = 900     // cap for retries after 429 / errors
+let staleAfter: TimeInterval = 15 * 60 // grey out only when data is older than this
 let warnThreshold = 50.0   // >= orange
 let critThreshold = 80.0   // >= red
 // Weekly: 100% is split into 7 daily portions; the budget is the portions unlocked so far.
@@ -27,6 +29,7 @@ struct Usage {
 enum FetchError: Error, CustomStringConvertible {
     case noCredentials
     case unauthorized
+    case rateLimited
     case http(Int)
     case network(String)
     case decode
@@ -35,6 +38,7 @@ enum FetchError: Error, CustomStringConvertible {
         switch self {
         case .noCredentials: return "Credenziali Claude Code non trovate nel Portachiavi"
         case .unauthorized: return "Token scaduto: apri Claude Code per rinnovarlo"
+        case .rateLimited: return "Troppe richieste (429), riprovo più tardi"
         case .http(let code): return "Errore HTTP \(code)"
         case .network(let msg): return "Rete: \(msg)"
         case .decode: return "Risposta non valida"
@@ -92,6 +96,7 @@ func fetchUsage(completion: @escaping (Result<Usage, FetchError>) -> Void) {
         if let err = err { return completion(.failure(.network(err.localizedDescription))) }
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401 || code == 403 { return completion(.failure(.unauthorized)) }
+        if code == 429 { return completion(.failure(.rateLimited)) }
         guard code == 200, let data = data else { return completion(.failure(.http(code))) }
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return completion(.failure(.decode))
@@ -208,15 +213,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var usage: Usage?
     var lastError: FetchError?
     var timer: Timer?
+    var backoff: TimeInterval = pollInterval
 
     func applicationDidFinishLaunching(_ note: Notification) {
         menu.delegate = self
         item.menu = menu
         setTitle(placeholder: "…")
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { [weak self] _ in
-            self?.refresh()
-        }
         // Refresh right after wake from sleep.
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
@@ -229,11 +232,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         fetchUsage { result in
             DispatchQueue.main.async {
                 switch result {
-                case .success(let u): self.usage = u; self.lastError = nil
-                case .failure(let e): self.lastError = e
+                case .success(let u):
+                    self.usage = u; self.lastError = nil
+                    self.backoff = pollInterval
+                case .failure(let e):
+                    self.lastError = e
+                    self.backoff = min(self.backoff * 2, maxBackoff)
                 }
                 self.render()
+                self.scheduleNext(self.lastError == nil ? pollInterval : self.backoff)
             }
+        }
+    }
+
+    func scheduleNext(_ delay: TimeInterval) {
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            self?.refresh()
         }
     }
 
@@ -246,7 +261,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func render() {
         guard let button = item.button else { return }
-        let stale = lastError != nil
+        // A failed poll keeps the last colors until the data is actually old.
+        let stale = lastError != nil && (usage.map { -$0.fetchedAt.timeIntervalSinceNow > staleAfter } ?? true)
 
         guard let u = usage else {
             setTitle(placeholder: "Claude ⚠︎")
