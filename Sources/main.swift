@@ -158,6 +158,48 @@ func describe(_ name: String, _ w: Window?, length: TimeInterval) -> String {
     return s
 }
 
+// MARK: - Menu bar drawing
+
+struct StackedColumn {
+    let value: String
+    let label: String
+    let color: NSColor
+}
+
+/// Draws each value with its small label underneath, side by side, sized for the menu bar.
+func stackedImage(_ columns: [StackedColumn], warning: Bool) -> NSImage {
+    let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
+    let labelFont = NSFont.systemFont(ofSize: 7, weight: .semibold)
+    let gap: CGFloat = 8, height: CGFloat = 22
+    let warn = NSAttributedString(string: "⚠︎", attributes: [
+        .font: NSFont.systemFont(ofSize: 10), .foregroundColor: NSColor.secondaryLabelColor,
+    ])
+
+    let cells = columns.map { c -> (NSAttributedString, NSAttributedString, CGFloat) in
+        let v = NSAttributedString(string: c.value, attributes: [.font: valueFont, .foregroundColor: c.color])
+        let l = NSAttributedString(string: c.label, attributes: [.font: labelFont, .foregroundColor: c.color])
+        return (v, l, ceil(max(v.size().width, l.size().width)))
+    }
+    var width = cells.reduce(0) { $0 + $1.2 } + gap * CGFloat(max(0, cells.count - 1))
+    if warning { width += 4 + ceil(warn.size().width) }
+
+    // The drawing handler runs again on appearance changes, so dynamic colors stay correct.
+    let image = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
+        var x: CGFloat = 0
+        for (v, l, w) in cells {
+            l.draw(at: NSPoint(x: x + (w - l.size().width) / 2, y: 1))
+            v.draw(at: NSPoint(x: x + (w - v.size().width) / 2, y: 8))
+            x += w + gap
+        }
+        if warning {
+            warn.draw(at: NSPoint(x: x - gap + 4, y: (height - warn.size().height) / 2))
+        }
+        return true
+    }
+    image.isTemplate = false
+    return image
+}
+
 // MARK: - App
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -196,6 +238,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func setTitle(placeholder: String) {
+        item.button?.image = nil
         item.button?.attributedTitle = NSAttributedString(string: placeholder, attributes: [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium),
         ])
@@ -203,8 +246,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func render() {
         guard let button = item.button else { return }
-        let font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
-        let labelFont = NSFont.systemFont(ofSize: 10, weight: .semibold)
         let stale = lastError != nil
 
         guard let u = usage else {
@@ -213,23 +254,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
 
-        let title = NSMutableAttributedString()
-        func add(_ label: String, _ w: Window?, _ colorOf: (Window) -> NSColor) {
-            let pct = w?.utilization
-            let text = pct.map { "\(Int($0.rounded()))%" } ?? "–"
+        func column(_ label: String, _ w: Window?, _ colorOf: (Window) -> NSColor) -> StackedColumn {
+            let text = w.map { "\(Int($0.utilization.rounded()))%" } ?? "–"
             let col = stale ? NSColor.tertiaryLabelColor : (w.map(colorOf) ?? .secondaryLabelColor)
-            title.append(NSAttributedString(string: label, attributes: [
-                .font: labelFont, .foregroundColor: col, .baselineOffset: 1,
-            ]))
-            title.append(NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: col]))
+            return StackedColumn(value: text, label: label, color: col)
         }
-        add("5h ", u.fiveHour) { color(for: $0.utilization) }
-        title.append(NSAttributedString(string: "  ", attributes: [.font: font]))
-        add("7d ", u.sevenDay, weeklyColor)
-        if stale {
-            title.append(NSAttributedString(string: " ⚠︎", attributes: [.font: labelFont]))
-        }
-        button.attributedTitle = title
+        button.attributedTitle = NSAttributedString()
+        button.image = stackedImage([
+            column("5h", u.fiveHour) { color(for: $0.utilization) },
+            column("7d", u.sevenDay, weeklyColor),
+        ], warning: stale)
 
         var tip = [describe("Sessione 5h", u.fiveHour, length: fiveHours),
                    describe("Settimana", u.sevenDay, length: sevenDays)]

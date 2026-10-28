@@ -3,7 +3,8 @@
 A tiny native macOS menu bar app that always shows your Claude plan usage:
 
 ```
-5h 10%  7d 43%
+10%  43%
+ 5h   7d
 ```
 
 - **5h**: current 5-hour session window
