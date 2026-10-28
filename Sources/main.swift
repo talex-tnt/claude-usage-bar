@@ -204,7 +204,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func render() {
         guard let button = item.button else { return }
         let font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
-        let labelFont = NSFont.systemFont(ofSize: 10, weight: .regular)
+        let labelFont = NSFont.systemFont(ofSize: 10, weight: .semibold)
         let stale = lastError != nil
 
         guard let u = usage else {
@@ -215,13 +215,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let title = NSMutableAttributedString()
         func add(_ label: String, _ w: Window?, _ colorOf: (Window) -> NSColor) {
-            title.append(NSAttributedString(string: label, attributes: [
-                .font: labelFont, .foregroundColor: NSColor.secondaryLabelColor,
-                .baselineOffset: 1,
-            ]))
             let pct = w?.utilization
             let text = pct.map { "\(Int($0.rounded()))%" } ?? "–"
             let col = stale ? NSColor.tertiaryLabelColor : (w.map(colorOf) ?? .secondaryLabelColor)
+            title.append(NSAttributedString(string: label, attributes: [
+                .font: labelFont, .foregroundColor: col, .baselineOffset: 1,
+            ]))
             title.append(NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: col]))
         }
         add("5h ", u.fiveHour) { color(for: $0.utilization) }
