@@ -5,6 +5,9 @@ import AppKit
 let pollInterval: TimeInterval = 60
 let warnThreshold = 50.0   // >= orange
 let critThreshold = 80.0   // >= red
+// Weekly: 100% is split into 7 daily portions; the budget is the portions unlocked so far.
+let weeklyWarnOfBudget = 0.85  // used >= 85% of today's budget -> orange
+let weeklyCrit = 90.0          // used >= 90% of the whole week -> red
 let fiveHours: TimeInterval = 5 * 3600
 let sevenDays: TimeInterval = 7 * 24 * 3600
 
@@ -107,6 +110,24 @@ func color(for pct: Double) -> NSColor {
     return .systemGreen
 }
 
+/// Current day of the weekly window (1...7) and the cumulative budget up to the end of it.
+func weeklyBudget(resetsAt: Date?) -> (day: Int, budget: Double)? {
+    guard let r = resetsAt else { return nil }
+    let elapsed = sevenDays - r.timeIntervalSinceNow
+    let day = min(7, max(1, Int(elapsed / 86400) + 1))
+    return (day, Double(day) * 100 / 7)
+}
+
+func budgetLine(_ b: (day: Int, budget: Double)) -> String {
+    "Budget settimanale fino a oggi: \(Int(b.budget.rounded()))% (giorno \(b.day)/7)"
+}
+
+func weeklyColor(_ w: Window) -> NSColor {
+    if w.utilization >= weeklyCrit { return .systemRed }
+    guard let b = weeklyBudget(resetsAt: w.resetsAt) else { return color(for: w.utilization) }
+    return w.utilization >= b.budget * weeklyWarnOfBudget ? .systemOrange : .systemGreen
+}
+
 func countdown(to date: Date?) -> String {
     guard let date = date else { return "—" }
     let s = max(0, Int(date.timeIntervalSinceNow))
@@ -193,19 +214,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         let title = NSMutableAttributedString()
-        func add(_ label: String, _ w: Window?) {
+        func add(_ label: String, _ w: Window?, _ colorOf: (Window) -> NSColor) {
             title.append(NSAttributedString(string: label, attributes: [
                 .font: labelFont, .foregroundColor: NSColor.secondaryLabelColor,
                 .baselineOffset: 1,
             ]))
             let pct = w?.utilization
             let text = pct.map { "\(Int($0.rounded()))%" } ?? "–"
-            let col = stale ? NSColor.tertiaryLabelColor : (pct.map(color(for:)) ?? .secondaryLabelColor)
+            let col = stale ? NSColor.tertiaryLabelColor : (w.map(colorOf) ?? .secondaryLabelColor)
             title.append(NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: col]))
         }
-        add("5h ", u.fiveHour)
+        add("5h ", u.fiveHour) { color(for: $0.utilization) }
         title.append(NSAttributedString(string: "  ", attributes: [.font: font]))
-        add("7d ", u.sevenDay)
+        add("7d ", u.sevenDay, weeklyColor)
         if stale {
             title.append(NSAttributedString(string: " ⚠︎", attributes: [.font: labelFont]))
         }
@@ -213,6 +234,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         var tip = [describe("Sessione 5h", u.fiveHour, length: fiveHours),
                    describe("Settimana", u.sevenDay, length: sevenDays)]
+        if let b = weeklyBudget(resetsAt: u.sevenDay?.resetsAt) {
+            tip.append(budgetLine(b))
+        }
         if let e = lastError { tip.append("⚠︎ \(e.description)") }
         button.toolTip = tip.joined(separator: "\n")
     }
@@ -231,8 +255,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 info("    tempo trascorso: \(Int(e))%")
             }
             info(describe("Settimana", u.sevenDay, length: sevenDays))
-            if let e = elapsedPct(resetsAt: u.sevenDay?.resetsAt, length: sevenDays) {
-                info("    tempo trascorso: \(Int(e))%")
+            if let b = weeklyBudget(resetsAt: u.sevenDay?.resetsAt) {
+                info("    " + budgetLine(b))
             }
             menu.addItem(.separator())
             let f = DateFormatter(); f.dateFormat = "HH:mm:ss"
